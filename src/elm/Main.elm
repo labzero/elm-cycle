@@ -7,6 +7,7 @@ import Html.App as App
 import Http
 import Geocoding as G
 import Task exposing (Task)
+import Maybe.Extra as Maybe
 
 
 -- app
@@ -75,32 +76,39 @@ update msg model =
 view : Model -> Html Msg
 view model =
     div [ class "body pure-g" ]
-        [ Html.form [ class "pure-form pure-u-2-3", onSubmit SubmitLocation ]
-            [ fieldset []
-                [ legend [] [ text "Find a Bike Share" ]
-                , input [ class "pure-input-1-3", type' "text", placeholder "Address, Location Name or Postal Code", value model.locationField, onInput UpdateLocationField ] []
-                , button [ class "pure-button pure-button-primary", type' "submit" ] [ text "Search" ]
+        <| [ Html.form [ class "pure-form pure-u-2-3", onSubmit SubmitLocation ]
+                [ fieldset []
+                    [ legend [] [ text "Find a Bike Share" ]
+                    , input [ class "pure-input-1-3", type' "text", placeholder "Address, Location Name or Postal Code", value model.locationField, onInput UpdateLocationField ] []
+                    , button [ class "pure-button pure-button-primary", type' "submit" ] [ text "Search" ]
+                    ]
                 ]
-            ]
-        , errorDiv model.errorMessage
-        , mapDiv
-        , div [ class "pure-u-2-3" ] [ model.geocodingData |> Maybe.map toString |> Maybe.withDefault "" |> text ]
-        ]
+           ]
+        ++ maybeNode errorDiv model.errorMessage
+        ++ [ mapDiv ]
+        ++ maybeNode geocodingDiv model.geocodingData
 
 
-errorDiv : Maybe String -> Html Msg
-errorDiv errorMsg =
-    case errorMsg of
-        Just str ->
-            div [ class "error pure-u-2-3" ] [ text str ]
+errorDiv : String -> Html Msg
+errorDiv str =
+    div [ class "error pure-u-2-3" ] [ text str ]
 
-        _ ->
-            div [ class "noerror " ] []
+
+geocodingDiv : G.Response -> Html Msg
+geocodingDiv r =
+    div [ class "pure-u-2-3" ] [ text <| toString r ]
 
 
 mapDiv : Html Msg
 mapDiv =
     div [ class "pure-u-1-1", id "map" ] []
+
+
+maybeNode : (a -> b) -> Maybe a -> List b
+maybeNode f maybeVal =
+    maybeVal
+        |> Maybe.map f
+        |> Maybe.maybeToList
 
 
 
