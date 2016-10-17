@@ -8,6 +8,8 @@ import Http
 import Geocoding as G
 import Task exposing (Task)
 import Maybe.Extra as Maybe
+import Json.Decode as Decode exposing (Decoder, list, int, string, float, (:=))
+import Json.Decode.Pipeline as Decode exposing (decode, required, custom, requiredAt)
 
 
 -- app
@@ -16,7 +18,7 @@ import Maybe.Extra as Maybe
 main : Program Never
 main =
     App.program
-        { init = initialModel ! []
+        { init = initialModel ! [ getNetworks ]
         , update = update
         , view = view
         , subscriptions = \_ -> Sub.none
@@ -31,6 +33,7 @@ type alias Model =
     { locationField : String
     , geocodingData : Maybe G.Response
     , errorMessage : Maybe String
+    , bikeNetworks : Maybe (List Network)
     }
 
 
@@ -39,6 +42,7 @@ initialModel =
     { locationField = ""
     , geocodingData = Nothing
     , errorMessage = Nothing
+    , bikeNetworks = Nothing
     }
 
 
@@ -51,6 +55,8 @@ type Msg
     | SubmitLocation
     | GeocodingError Http.Error
     | GeocodingSuccess G.Response
+    | LoadNetworksError Http.Error
+    | LoadNetworksSuccess (List Network)
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -67,6 +73,12 @@ update msg model =
 
         GeocodingSuccess data ->
             { model | geocodingData = Just data } ! [ createMapForLocation <| mapSpecForResponse data ]
+
+        LoadNetworksError err ->
+            { model | errorMessage = Just <| toString err } ! []
+
+        LoadNetworksSuccess networks ->
+            { model | bikeNetworks = Just networks } ! []
 
 
 
@@ -86,6 +98,7 @@ view model =
            ]
         ++ maybeNode errorDiv model.errorMessage
         ++ [ mapDiv ]
+        ++ maybeNode networksView model.bikeNetworks
         ++ maybeNode geocodingDiv model.geocodingData
 
 
@@ -101,7 +114,32 @@ geocodingDiv r =
 
 mapDiv : Html Msg
 mapDiv =
-    div [ class "pure-u-1-1", id "map" ] []
+    div [ class "map pure-u-1-1", id "map" ] []
+
+
+networksView : List Network -> Html Msg
+networksView networks =
+    table [ class "pure-u-1-2 pure-table pure-table-horizontal" ]
+        [ thead []
+            [ th [] [ text "Name" ]
+            , th [] [ text "City" ]
+            , th [] [ text "Country" ]
+            , th [] [ text "Latitude" ]
+            , th [] [ text "Longitude" ]
+            ]
+        , tbody [] <| List.map networkRow networks
+        ]
+
+
+networkRow : Network -> Html Msg
+networkRow network =
+    tr []
+        [ td [] [ text network.name ]
+        , td [] [ text network.location.city ]
+        , td [] [ text network.location.country ]
+        , td [] [ text <| toString network.location.latitude ]
+        , td [] [ text <| toString network.location.longitude ]
+        ]
 
 
 maybeNode : (a -> b) -> Maybe a -> List b
@@ -125,6 +163,24 @@ geocodeLocation str =
     G.requestForAddress googleKey str
         |> G.send
         |> Task.perform GeocodingError GeocodingSuccess
+
+
+
+-- HTTP
+
+
+apiUrl : String
+apiUrl =
+    "https://api.citybik.es/v2/networks"
+
+
+getNetworks : Cmd Msg
+getNetworks =
+    let
+        task =
+            Http.get networksDecoder apiUrl
+    in
+        task |> Task.perform LoadNetworksError LoadNetworksSuccess
 
 
 
@@ -199,3 +255,81 @@ type alias Bounds =
     , south : Float
     , west : Float
     }
+
+
+type alias Network =
+    { id : String
+    , name : String
+    , href : String
+    , location : NetworkLocation
+    , company : Company
+    }
+
+
+type Company
+    = CompanyName String
+    | MultipleCompanyNames (List String)
+    | NoCompany
+
+
+type alias NetworkLocation =
+    { city : String
+    , country : String
+    , latitude : Float
+    , longitude : Float
+    }
+
+
+type alias NetworksContainer =
+    { networks : List Network
+    }
+
+
+
+-- JSON decoders
+
+
+networkListDecoder : Decoder (List Network)
+networkListDecoder =
+    Decode.list networkDecoder
+
+
+
+-- this is a hack to un-nest the JSON structure
+-- I'm sure there's a better way..
+
+
+networksDecoder : Decoder (List Network)
+networksDecoder =
+    Decode.map .networks
+        (decode NetworksContainer
+            |> Decode.required "networks" networkListDecoder
+        )
+
+
+networkDecoder : Decoder Network
+networkDecoder =
+    decode Network
+        |> Decode.required "id" string
+        |> Decode.required "name" string
+        |> Decode.required "href" string
+        |> Decode.required "location" (networkLocationDecoder)
+        |> Decode.required "company" companyDecoder
+
+
+networkLocationDecoder : Decoder NetworkLocation
+networkLocationDecoder =
+    decode NetworkLocation
+        |> Decode.required "city" string
+        |> Decode.required "country" string
+        |> Decode.required "latitude" float
+        |> Decode.required "longitude" float
+
+
+companyDecoder : Decoder Company
+companyDecoder =
+    Decode.oneOf
+        [ Decode.map CompanyName string
+        , Decode.map MultipleCompanyNames (Decode.list string)
+        , Decode.null NoCompany
+        ]
