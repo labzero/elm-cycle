@@ -8,6 +8,7 @@ import Http
 import String
 import Time exposing (Time)
 import Date exposing (Date)
+import Basics as B
 import Geocoding as G
 import Task exposing (Task)
 import Maybe.Extra as Maybe
@@ -82,11 +83,7 @@ update msg model =
             { model | errorMessage = Just <| toString err } ! []
 
         GeocodingSuccess data ->
-            let
-                mapSpec =
-                    mapSpecForResponse data
-            in
-                { model | geocodingData = mapSpec } ! [ createMapForLocation mapSpec, getNetworks ]
+            { model | geocodingData = mapSpecForResponse data } ! [ getNetworks ]
 
         LoadNetworksError err ->
             { model | errorMessage = Just <| toString err } ! []
@@ -105,14 +102,24 @@ update msg model =
             { model | errorMessage = Just <| toString err } ! []
 
         LoadStationsSuccess stations ->
-            { model | stations = stations } ! [ createMapMarkers stations ]
+            let
+                stationBounds =
+                    List.map .coordinates stations |> boundsForCoordinates
+
+                markers =
+                    List.map markerSpecForStation stations
+
+                mapSpec =
+                    Maybe.map (\d -> { d | bounds = stationBounds, markers = markers }) model.geocodingData
+            in
+                { model | stations = stations } ! [ createMapForLocation mapSpec ]
 
 
 findNearestNetwork : List Network -> Coordinates -> Maybe Network
 findNearestNetwork networks coordinates =
     let
         distance coords net =
-            ( net, Geod.distance ( coords.lat, coords.lng ) ( net.location.latitude, net.location.longitude ) Geod.Meters )
+            ( net, Geod.distance ( coords.lat, coords.lng ) ( net.location.coordinates.lat, net.location.coordinates.lng ) Geod.Meters )
 
         distances =
             List.map (distance coordinates) networks
@@ -192,8 +199,8 @@ networkRow network =
         [ td [] [ text network.name ]
         , td [] [ text network.location.city ]
         , td [] [ text network.location.country ]
-        , td [] [ text <| toString network.location.latitude ]
-        , td [] [ text <| toString network.location.longitude ]
+        , td [] [ text <| toString network.location.coordinates.lat ]
+        , td [] [ text <| toString network.location.coordinates.lng ]
         ]
 
 
@@ -279,14 +286,6 @@ createMapForLocation mapSpec =
 port createMap : MapSpec -> Cmd msg
 
 
-createMapMarkers : List Station -> Cmd msg
-createMapMarkers stations =
-    List.map markerSpecForStation stations |> createStationMarkers
-
-
-port createStationMarkers : List MarkerSpec -> Cmd msg
-
-
 
 -- Location Helpers
 
@@ -307,7 +306,7 @@ mapSpecForResponse data =
 
 makeMapSpec : { latitude : Float, longitude : Float } -> G.Viewport -> MapSpec
 makeMapSpec loc viewport =
-    MapSpec (coordinates loc) (bounds viewport)
+    MapSpec (coordinates loc) (bounds viewport) []
 
 
 coordinates : { latitude : Float, longitude : Float } -> Coordinates
@@ -322,16 +321,35 @@ bounds v =
 
 markerSpecForStation : Station -> MarkerSpec
 markerSpecForStation s =
-    MarkerSpec (Coordinates s.latitude s.longitude) s.name
+    MarkerSpec s.coordinates s.name
 
 
 
--- Types
+-- calculate a viewport for a list of coordinates
+
+
+boundsForCoordinates : List Coordinates -> Bounds
+boundsForCoordinates coords =
+    let
+        east =
+            List.map .lng coords |> List.maximum |> Maybe.withDefault 0
+
+        north =
+            List.map .lat coords |> List.maximum |> Maybe.withDefault 0
+
+        south =
+            List.map .lat coords |> List.minimum |> Maybe.withDefault 0
+
+        west =
+            List.map .lng coords |> List.minimum |> Maybe.withDefault 0
+    in
+        Bounds east north south west
 
 
 type alias MapSpec =
     { center : Coordinates
     , bounds : Bounds
+    , markers : List MarkerSpec
     }
 
 
@@ -373,16 +391,14 @@ type Company
 type alias NetworkLocation =
     { city : String
     , country : String
-    , latitude : Float
-    , longitude : Float
+    , coordinates : Coordinates
     }
 
 
 type alias Station =
     { id : String
     , name : String
-    , latitude : Float
-    , longitude : Float
+    , coordinates : Coordinates
     , emptySlots : Int
     , freeBikes : Int
     , timestamp : Time
@@ -414,8 +430,11 @@ networkLocationDecoder =
     decode NetworkLocation
         |> Decode.required "city" string
         |> Decode.required "country" string
-        |> Decode.required "latitude" float
-        |> Decode.required "longitude" float
+        |> Decode.custom
+            (decode Coordinates
+                |> Decode.required "latitude" float
+                |> Decode.required "longitude" float
+            )
 
 
 companyDecoder : Decoder Company
@@ -437,8 +456,11 @@ stationDecoder =
     decode Station
         |> Decode.required "id" string
         |> Decode.required "name" string
-        |> Decode.required "latitude" float
-        |> Decode.required "longitude" float
+        |> Decode.custom
+            (decode Coordinates
+                |> Decode.required "latitude" float
+                |> Decode.required "longitude" float
+            )
         |> Decode.required "empty_slots" int
         |> Decode.required "free_bikes" int
         |> Decode.required "timestamp"

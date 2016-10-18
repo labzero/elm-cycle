@@ -22,14 +22,6 @@ var addMarker = function(markerSpec) {
   });
 };
 
-app.ports.createStationMarkers.subscribe(function(markerSpecs) {
-  console.log("station markers " + JSON.stringify(markerSpecs));
-
-  markerSpecs.forEach(function(markerSpec) {
-    stationMarkers.push(addMarker(markerSpec));
-  });
-});
-
 app.ports.createMap.subscribe(function(mapSpec) {
   var el = document.getElementById('map')
   el.style.display = 'block';
@@ -147,4 +139,7 @@ app.ports.createMap.subscribe(function(mapSpec) {
         ]
     });
     map.fitBounds(mapSpec.bounds);
+    mapSpec.markers.forEach(function(markerSpec) {
+      stationMarkers.push(addMarker(markerSpec));
+    });
 })
