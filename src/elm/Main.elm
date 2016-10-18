@@ -5,11 +5,13 @@ import Html.Attributes exposing (..)
 import Html.Events exposing (..)
 import Html.App as App
 import Http
+import String
 import Geocoding as G
 import Task exposing (Task)
 import Maybe.Extra as Maybe
 import Json.Decode as Decode exposing (Decoder, list, int, string, float, (:=))
 import Json.Decode.Pipeline as Decode exposing (decode, required, custom, requiredAt)
+import Geodesy as Geod
 
 
 -- app
@@ -18,7 +20,7 @@ import Json.Decode.Pipeline as Decode exposing (decode, required, custom, requir
 main : Program Never
 main =
     App.program
-        { init = initialModel ! [ getNetworks ]
+        { init = initialModel ! []
         , update = update
         , view = view
         , subscriptions = \_ -> Sub.none
@@ -31,9 +33,10 @@ main =
 
 type alias Model =
     { locationField : String
-    , geocodingData : Maybe G.Response
+    , geocodingData : Maybe MapSpec
     , errorMessage : Maybe String
     , bikeNetworks : Maybe (List Network)
+    , nearestNetwork : Maybe Network
     }
 
 
@@ -43,6 +46,7 @@ initialModel =
     , geocodingData = Nothing
     , errorMessage = Nothing
     , bikeNetworks = Nothing
+    , nearestNetwork = Nothing
     }
 
 
@@ -72,13 +76,33 @@ update msg model =
             { model | errorMessage = Just <| toString err } ! []
 
         GeocodingSuccess data ->
-            { model | geocodingData = Just data } ! [ createMapForLocation <| mapSpecForResponse data ]
+            let
+                mapSpec =
+                    mapSpecForResponse data
+            in
+                { model | geocodingData = mapSpec } ! [ createMapForLocation mapSpec, getNetworks ]
 
         LoadNetworksError err ->
             { model | errorMessage = Just <| toString err } ! []
 
         LoadNetworksSuccess networks ->
-            { model | bikeNetworks = Just networks } ! []
+            let
+                nearestNetwork =
+                    Maybe.map (findNearestNetwork networks << .center) model.geocodingData |> Maybe.join
+            in
+                { model | bikeNetworks = Just networks, nearestNetwork = nearestNetwork } ! []
+
+
+findNearestNetwork : List Network -> Coordinates -> Maybe Network
+findNearestNetwork networks coordinates =
+    let
+        distance coords net =
+            ( net, Geod.distance ( coords.lat, coords.lng ) ( net.location.latitude, net.location.longitude ) Geod.Meters )
+
+        distances =
+            List.map (distance coordinates) networks
+    in
+        List.sortBy snd distances |> List.head |> Maybe.map fst
 
 
 
@@ -98,8 +122,7 @@ view model =
            ]
         ++ maybeNode errorDiv model.errorMessage
         ++ [ mapDiv ]
-        ++ maybeNode networksView model.bikeNetworks
-        ++ maybeNode geocodingDiv model.geocodingData
+        ++ maybeNode networkCard model.nearestNetwork
 
 
 errorDiv : String -> Html Msg
@@ -107,14 +130,31 @@ errorDiv str =
     div [ class "error pure-u-2-3" ] [ text str ]
 
 
-geocodingDiv : G.Response -> Html Msg
-geocodingDiv r =
-    div [ class "pure-u-2-3" ] [ text <| toString r ]
-
-
 mapDiv : Html Msg
 mapDiv =
     div [ class "map pure-u-1-1", id "map" ] []
+
+
+networkCard : Network -> Html Msg
+networkCard network =
+    div [ class "pure-u-11-24 network-card" ]
+        [ div [ class "network-name" ] [ text network.name ]
+        , div [ class "network-company" ] [ text <| companyHelper network.company ]
+        , div [ class "network-location" ] [ text <| network.location.city ++ ", " ++ network.location.country ]
+        ]
+
+
+companyHelper : Company -> String
+companyHelper company =
+    case company of
+        CompanyName name ->
+            name
+
+        MultipleCompanyNames names ->
+            String.join ", " names
+
+        NoCompany ->
+            ""
 
 
 networksView : List Network -> Html Msg
@@ -289,22 +329,10 @@ type alias NetworksContainer =
 -- JSON decoders
 
 
-networkListDecoder : Decoder (List Network)
-networkListDecoder =
-    Decode.list networkDecoder
-
-
-
--- this is a hack to un-nest the JSON structure
--- I'm sure there's a better way..
-
-
 networksDecoder : Decoder (List Network)
 networksDecoder =
-    Decode.map .networks
-        (decode NetworksContainer
-            |> Decode.required "networks" networkListDecoder
-        )
+    "networks"
+        := (Decode.list networkDecoder)
 
 
 networkDecoder : Decoder Network
