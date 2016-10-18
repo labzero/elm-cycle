@@ -6,10 +6,9 @@ var Elm = require( '../elm/Main' );
 var app = Elm.Main.embed( document.getElementById( 'main' ) );
 
 var map;
-var stationMarkers = [];
+var markers = [];
 
 var addMarker = function(markerSpec) {
-  console.log("marker spec " + JSON.stringify(markerSpec));
   return new google.maps.Marker({
     position: markerSpec.location,
     title: markerSpec.title,
@@ -140,6 +139,6 @@ app.ports.createMap.subscribe(function(mapSpec) {
     });
     map.fitBounds(mapSpec.bounds);
     mapSpec.markers.forEach(function(markerSpec) {
-      stationMarkers.push(addMarker(markerSpec));
+      markers.push(addMarker(markerSpec));
     });
 })

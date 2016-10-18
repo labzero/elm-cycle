@@ -37,6 +37,7 @@ main =
 type alias Model =
     { locationField : String
     , geocodingData : Maybe MapSpec
+    , mapSpec : Maybe MapSpec
     , errorMessage : Maybe String
     , bikeNetworks : Maybe (List Network)
     , nearestNetwork : Maybe Network
@@ -48,6 +49,7 @@ initialModel : Model
 initialModel =
     { locationField = ""
     , geocodingData = Nothing
+    , mapSpec = Nothing
     , errorMessage = Nothing
     , bikeNetworks = Nothing
     , nearestNetwork = Nothing
@@ -83,7 +85,7 @@ update msg model =
             { model | errorMessage = Just <| toString err } ! []
 
         GeocodingSuccess data ->
-            { model | geocodingData = mapSpecForResponse data } ! [ getNetworks ]
+            { model | geocodingData = mapSpecForResponse (Debug.log (toString data) data) } ! [ getNetworks ]
 
         LoadNetworksError err ->
             { model | errorMessage = Just <| toString err } ! []
@@ -103,16 +105,16 @@ update msg model =
 
         LoadStationsSuccess stations ->
             let
-                stationBounds =
-                    List.map .coordinates stations |> boundsForCoordinates
-
                 markers =
                     List.map markerSpecForStation stations
 
+                bounds =
+                    Maybe.map .bounds model.geocodingData |> calculateMapBounds stations
+
                 mapSpec =
-                    Maybe.map (\d -> { d | bounds = stationBounds, markers = markers }) model.geocodingData
+                    MapSpec (boundsCenter bounds) bounds markers
             in
-                { model | stations = stations } ! [ createMapForLocation mapSpec ]
+                { model | stations = stations, mapSpec = Just mapSpec } ! [ createMapForLocation <| Just mapSpec ]
 
 
 findNearestNetwork : List Network -> Coordinates -> Maybe Network
@@ -344,6 +346,85 @@ boundsForCoordinates coords =
             List.map .lng coords |> List.minimum |> Maybe.withDefault 0
     in
         Bounds east north south west
+
+
+boundsCenter : Bounds -> Coordinates
+boundsCenter b =
+    Coordinates (b.south + (boundsHeight b / 2)) (b.west + (boundsWidth b / 2))
+
+
+boundsHeight : Bounds -> Float
+boundsHeight x =
+    x.north - x.south
+
+
+boundsWidth : Bounds -> Float
+boundsWidth x =
+    x.east - x.west
+
+
+boundsContains : Bounds -> Coordinates -> Bool
+boundsContains b c =
+    c.lng >= b.west && c.lng <= b.east && c.lat >= b.south && c.lat <= b.north
+
+
+
+-- completely unprincipled fudge factor
+
+
+minMapWidth : Float
+minMapWidth =
+    0.07
+
+
+minMapHeight : Float
+minMapHeight =
+    0.03
+
+
+ensureMinimumSize : Bounds -> Bounds
+ensureMinimumSize b =
+    let
+        ( north, south ) =
+            if b.north - b.south < minMapHeight then
+                ( b.north + (minMapHeight / 2.0), b.south - (minMapHeight / 2.0) )
+            else
+                ( north, south )
+
+        ( east, west ) =
+            if b.east - b.west < minMapWidth then
+                ( b.east + (minMapWidth / 2.0), b.west - (minMapWidth / 2.0) )
+            else
+                ( east, west )
+    in
+        Bounds east north south west
+
+
+containsStations : Bounds -> List Station -> Bool
+containsStations b =
+    List.any (boundsContains b << .coordinates)
+
+
+
+-- if a minimally sized map containing your geocoding results contains any stations
+-- use that, otherwise use a viewport that contains all the stations in the network
+
+
+calculateMapBounds : List Station -> Maybe Bounds -> Bounds
+calculateMapBounds stations bounds =
+    let
+        stationBounds =
+            List.map .coordinates stations |> boundsForCoordinates
+    in
+        case bounds of
+            Just b ->
+                if containsStations (ensureMinimumSize b) stations then
+                    ensureMinimumSize b
+                else
+                    stationBounds
+
+            _ ->
+                stationBounds
 
 
 type alias MapSpec =
