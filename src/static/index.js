@@ -5,6 +5,8 @@ require( './styles/main.scss' );
 var Elm = require( '../elm/Main' );
 var app = Elm.Main.embed( document.getElementById( 'main' ) );
 
+var map;
+
 app.ports.createMap.subscribe(function(mapSpec) {
   var el = document.getElementById('map')
   el.style.display = 'block';

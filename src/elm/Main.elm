@@ -6,6 +6,8 @@ import Html.Events exposing (..)
 import Html.App as App
 import Http
 import String
+import Time exposing (Time)
+import Date exposing (Date)
 import Geocoding as G
 import Task exposing (Task)
 import Maybe.Extra as Maybe
@@ -37,6 +39,7 @@ type alias Model =
     , errorMessage : Maybe String
     , bikeNetworks : Maybe (List Network)
     , nearestNetwork : Maybe Network
+    , stations : List Station
     }
 
 
@@ -47,6 +50,7 @@ initialModel =
     , errorMessage = Nothing
     , bikeNetworks = Nothing
     , nearestNetwork = Nothing
+    , stations = []
     }
 
 
@@ -61,6 +65,8 @@ type Msg
     | GeocodingSuccess G.Response
     | LoadNetworksError Http.Error
     | LoadNetworksSuccess (List Network)
+    | LoadStationsError Http.Error
+    | LoadStationsSuccess (List Station)
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -89,8 +95,17 @@ update msg model =
             let
                 nearestNetwork =
                     Maybe.map (findNearestNetwork networks << .center) model.geocodingData |> Maybe.join
+
+                maybeLoadStations =
+                    Maybe.map getStations nearestNetwork |> Maybe.withDefault Cmd.none
             in
-                { model | bikeNetworks = Just networks, nearestNetwork = nearestNetwork } ! []
+                { model | bikeNetworks = Just networks, nearestNetwork = nearestNetwork } ! [ maybeLoadStations ]
+
+        LoadStationsError err ->
+            { model | errorMessage = Just <| toString err } ! []
+
+        LoadStationsSuccess stations ->
+            { model | stations = Debug.log (toString stations) stations } ! []
 
 
 findNearestNetwork : List Network -> Coordinates -> Maybe Network
@@ -211,16 +226,40 @@ geocodeLocation str =
 
 apiUrl : String
 apiUrl =
-    "https://api.citybik.es/v2/networks"
+    "https://api.citybik.es"
+
+
+buildUrl : String -> String
+buildUrl =
+    (++) apiUrl
+
+
+networksUrl : String
+networksUrl =
+    buildUrl "/v2/networks"
+
+
+stationsUrl : Network -> String
+stationsUrl =
+    buildUrl << .href
 
 
 getNetworks : Cmd Msg
 getNetworks =
     let
         task =
-            Http.get networksDecoder apiUrl
+            Http.get networksDecoder networksUrl
     in
         task |> Task.perform LoadNetworksError LoadNetworksSuccess
+
+
+getStations : Network -> Cmd Msg
+getStations network =
+    let
+        task =
+            Http.get stationsDecoder <| stationsUrl network
+    in
+        task |> Task.perform LoadStationsError LoadStationsSuccess
 
 
 
@@ -320,8 +359,14 @@ type alias NetworkLocation =
     }
 
 
-type alias NetworksContainer =
-    { networks : List Network
+type alias Station =
+    { id : String
+    , name : String
+    , latitude : Float
+    , longitude : Float
+    , emptySlots : Int
+    , freeBikes : Int
+    , timestamp : Time
     }
 
 
@@ -361,3 +406,33 @@ companyDecoder =
         , Decode.map MultipleCompanyNames (Decode.list string)
         , Decode.null NoCompany
         ]
+
+
+stationsDecoder : Decoder (List Station)
+stationsDecoder =
+    Decode.at [ "network", "stations" ] (Decode.list stationDecoder)
+
+
+stationDecoder : Decoder Station
+stationDecoder =
+    decode Station
+        |> Decode.required "id" string
+        |> Decode.required "name" string
+        |> Decode.required "latitude" float
+        |> Decode.required "longitude" float
+        |> Decode.required "empty_slots" int
+        |> Decode.required "free_bikes" int
+        |> Decode.required "timestamp"
+            (Decode.map (jsDateToTime 0) string)
+
+
+
+-- Helpers
+
+
+jsDateToTime : Time -> String -> Time
+jsDateToTime default =
+    Date.fromString
+        >> Result.map Date.toTime
+        >> Result.toMaybe
+        >> Maybe.withDefault default
