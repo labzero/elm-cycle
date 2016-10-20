@@ -125,8 +125,11 @@ update msg model =
 
                 mapSpec =
                     MapSpec (boundsCenter bounds) bounds markers
+
+                stationsWithDistance =
+                    List.map (withDistanceFrom mapSpec.center) stations
             in
-                { model | stations = sortByDistanceFrom mapSpec.center stations, mapSpec = Just mapSpec } ! [ createMapForLocation <| Just mapSpec ]
+                { model | stations = sortByDistance stationsWithDistance, mapSpec = Just mapSpec } ! [ createMapForLocation <| Just mapSpec ]
 
         UseCurrentLocation ->
             model ! [ getCurrentLocation ]
@@ -144,8 +147,11 @@ update msg model =
             let
                 bounds =
                     Maybe.map .bounds model.geocodingData |> calculateMapBounds stations
+
+                stationsWithDistance =
+                    List.map (withDistanceFrom <| boundsCenter bounds) stations
             in
-                { model | stations = sortByDistanceFrom (boundsCenter bounds) stations, updatedStations = model.updatedStations ++ updatedStations model.stations stations } ! [ clearUpdatedStations ]
+                { model | stations = sortByDistance stationsWithDistance, updatedStations = model.updatedStations ++ updatedStations model.stations stations } ! [ clearUpdatedStations ]
 
         ClearUpdatedStations ->
             { model | updatedStations = [] } ! []
@@ -238,6 +244,7 @@ stationsView stations updated =
                     [ th [] [ text "Name" ]
                     , th [] [ text "Free Bikes" ]
                     , th [] [ text "Empty Slots" ]
+                    , th [] [ text "Distance" ]
                     ]
                 , tbody [] <| List.map (stationRow updated) stations
                 ]
@@ -257,6 +264,7 @@ stationRow ids station =
             [ td [] [ text <| station.name ]
             , td [] [ text <| toString station.freeBikes ]
             , td [] [ text <| toString station.emptySlots ]
+            , td [] [ Maybe.map (toString << ceiling) station.distance |> Maybe.withDefault "" |> text ]
             ]
 
 
@@ -395,9 +403,14 @@ port createMap : MapSpec -> Cmd msg
 -- Location Helpers
 
 
-sortByDistanceFrom : Coordinates -> List Station -> List Station
-sortByDistanceFrom coords stations =
-    List.sortBy (\s -> distance coords s.coordinates) stations
+sortByDistance : List Station -> List Station
+sortByDistance =
+    List.sortBy (.distance >> Maybe.withDefault 999999999)
+
+
+withDistanceFrom : Coordinates -> Station -> Station
+withDistanceFrom coords station =
+    { station | distance = Just <| distance coords station.coordinates }
 
 
 distance : Coordinates -> Coordinates -> Float
@@ -613,6 +626,7 @@ type alias Station =
     , emptySlots : Int
     , freeBikes : Int
     , timestamp : Time
+    , distance : Maybe Float
     }
 
 
@@ -676,6 +690,7 @@ stationDecoder =
         |> Decode.required "free_bikes" int
         |> Decode.required "timestamp"
             (Decode.map (jsDateToTime 0) string)
+        |> Decode.hardcoded (Just 0.0)
 
 
 
