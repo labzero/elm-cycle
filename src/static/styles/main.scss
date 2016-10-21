@@ -50,3 +50,8 @@ body {
   background-color: green;
   transition: background-color 2s;
 }
+
+.station-row-focused {
+  background-color: red;
+  transition: background-color 0.5s;
+}
