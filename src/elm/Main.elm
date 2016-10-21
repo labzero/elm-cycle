@@ -82,6 +82,7 @@ type Msg
     | UpdateStations Network
     | UpdateStationsSuccess (List Station)
     | ClearUpdatedStations
+    | StationClicked Station
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -156,6 +157,9 @@ update msg model =
         ClearUpdatedStations ->
             { model | updatedStations = [] } ! []
 
+        StationClicked station ->
+            model ! [ zoomMap station.coordinates ]
+
 
 clearUpdatedStations : Cmd Msg
 clearUpdatedStations =
@@ -173,7 +177,7 @@ updatedStations before after =
                 Just s ->
                     s.freeBikes /= station.freeBikes || s.emptySlots /= station.emptySlots
 
-                _ ->
+                Nothing ->
                     True
     in
         List.map .id (List.filter changed after)
@@ -260,7 +264,7 @@ stationRow ids station =
             else
                 "station-row"
     in
-        tr [ class classes ]
+        tr [ class classes, onClick <| StationClicked station ]
             [ td [] [ text <| station.name ]
             , td [] [ text <| toString station.freeBikes ]
             , td [] [ text <| toString station.emptySlots ]
@@ -378,7 +382,7 @@ subscriptions model =
         Just network ->
             Time.every (15 * Time.second) (\_ -> UpdateStations network)
 
-        _ ->
+        Nothing ->
             Sub.none
 
 
@@ -387,13 +391,16 @@ subscriptions model =
 
 
 createMapForLocation : Maybe MapSpec -> Cmd msg
-createMapForLocation mapSpec =
-    case mapSpec of
-        Just spec ->
-            createMap spec
+createMapForLocation =
+    Maybe.unwrap Cmd.none createMap
 
-        _ ->
-            Cmd.none
+
+zoomMapToCoordinates : Maybe Coordinates -> Cmd msg
+zoomMapToCoordinates =
+    Maybe.unwrap Cmd.none zoomMap
+
+
+port zoomMap : Coordinates -> Cmd msg
 
 
 port createMap : MapSpec -> Cmd msg
@@ -445,7 +452,7 @@ mapSpecForResponse data =
             Just geom ->
                 Just <| makeMapSpec geom.location geom.viewport
 
-            _ ->
+            Nothing ->
                 Nothing
 
 
@@ -566,7 +573,7 @@ calculateMapBounds stations bounds =
                 else
                     stationBounds
 
-            _ ->
+            Nothing ->
                 stationBounds
 
 
