@@ -40,3 +40,13 @@ body {
   height: 600px;
   display: none;
 }
+
+.station-row {
+  background-color: white;
+  transition: background-color 2s;
+}
+
+.station-row-updated {
+  background-color: green;
+  transition: background-color 2s;
+}

@@ -6,9 +6,12 @@ import Html.Events exposing (..)
 import Html.App as App
 import Http
 import String
+import Dict
 import Time exposing (Time)
 import Date exposing (Date)
 import Basics as B
+import Process
+import Basics.Extra as B
 import Geocoding as G
 import Geolocation
 import Task exposing (Task)
@@ -43,6 +46,7 @@ type alias Model =
     , bikeNetworks : Maybe (List Network)
     , nearestNetwork : Maybe Network
     , stations : List Station
+    , updatedStations : List String
     }
 
 
@@ -55,6 +59,7 @@ initialModel =
     , bikeNetworks = Nothing
     , nearestNetwork = Nothing
     , stations = []
+    , updatedStations = []
     }
 
 
@@ -76,6 +81,7 @@ type Msg
     | GeolocationSuccess Coordinates
     | UpdateStations Network
     | UpdateStationsSuccess (List Station)
+    | ClearUpdatedStations
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -139,11 +145,35 @@ update msg model =
                 bounds =
                     Maybe.map .bounds model.geocodingData |> calculateMapBounds stations
             in
-                { model | stations = sortByDistanceFrom (boundsCenter bounds) stations } ! []
+                { model | stations = sortByDistanceFrom (boundsCenter bounds) stations, updatedStations = model.updatedStations ++ updatedStations model.stations stations } ! [ clearUpdatedStations ]
+
+        ClearUpdatedStations ->
+            { model | updatedStations = [] } ! []
+
+
+clearUpdatedStations : Cmd Msg
+clearUpdatedStations =
+    Process.sleep 2000 |> Task.perform B.never (\_ -> ClearUpdatedStations)
+
+
+updatedStations : List Station -> List Station -> List String
+updatedStations before after =
+    let
+        beforeMap =
+            (List.map (\x -> ( x.id, x )) before) |> Dict.fromList
+
+        changed station =
+            case Dict.get station.id beforeMap of
+                Just s ->
+                    s.freeBikes /= station.freeBikes || s.emptySlots /= station.emptySlots
+
+                _ ->
+                    True
+    in
+        List.map .id (List.filter changed after)
 
 
 
---[ getStations  network]
 -- VIEW
 
 
@@ -162,7 +192,7 @@ view model =
         ++ maybeNode errorDiv model.errorMessage
         ++ [ mapDiv ]
         ++ maybeNode networkCard model.nearestNetwork
-        ++ [ stationsView model.stations ]
+        ++ [ stationsView model.stations model.updatedStations ]
 
 
 errorDiv : String -> Html Msg
@@ -197,8 +227,8 @@ companyHelper company =
             ""
 
 
-stationsView : List Station -> Html Msg
-stationsView stations =
+stationsView : List Station -> List String -> Html Msg
+stationsView stations updated =
     div [ class "pure-u-1-1" ]
         <| if List.isEmpty stations then
             []
@@ -209,18 +239,25 @@ stationsView stations =
                     , th [] [ text "Free Bikes" ]
                     , th [] [ text "Empty Slots" ]
                     ]
-                , tbody [] <| List.map stationRow stations
+                , tbody [] <| List.map (stationRow updated) stations
                 ]
             ]
 
 
-stationRow : Station -> Html Msg
-stationRow station =
-    tr []
-        [ td [] [ text <| station.name ]
-        , td [] [ text <| toString station.freeBikes ]
-        , td [] [ text <| toString station.emptySlots ]
-        ]
+stationRow : List String -> Station -> Html Msg
+stationRow ids station =
+    let
+        classes =
+            if List.member station.id ids then
+                "station-row, station-row-updated"
+            else
+                "station-row"
+    in
+        tr [ class classes ]
+            [ td [] [ text <| station.name ]
+            , td [] [ text <| toString station.freeBikes ]
+            , td [] [ text <| toString station.emptySlots ]
+            ]
 
 
 networksView : List Network -> Html Msg
@@ -331,7 +368,7 @@ subscriptions : Model -> Sub Msg
 subscriptions model =
     case model.nearestNetwork of
         Just network ->
-            Time.every (5 * Time.second) (\_ -> UpdateStations network)
+            Time.every (15 * Time.second) (\_ -> UpdateStations network)
 
         _ ->
             Sub.none
