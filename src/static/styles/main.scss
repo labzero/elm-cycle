@@ -10,6 +10,32 @@ body {
   color: black;
 }
 
+.network-card {
+  display: block;
+  position: relative;
+  padding : 20px;
+}
+
+.network-name {
+  font-size: 20px;
+  font-weight: 100;
+  display: inline-block;
+  padding: 10px;
+}
+
+.network-company {
+  font-size: 16px;
+  font-weight: 100;
+  display: inline-block;
+}
+
+.network-location {
+  font-size: 18px;
+  font-weight: 100;
+  display: block;
+  padding: 10px;
+}
+
 #map {
   height: 600px;
   display: none;
