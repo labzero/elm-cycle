@@ -63,3 +63,9 @@ maybeToList m =
 
 * Step 15
  - display the distance to each station
+
+* Step 16
+ - more JS interop
+
+* Step 17
+ - more visual feedback
