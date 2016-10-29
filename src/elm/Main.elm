@@ -27,7 +27,7 @@ main =
         { init = initialModel ! []
         , update = update
         , view = view
-        , subscriptions = \_ -> Sub.none
+        , subscriptions = subscriptions
         }
 
 
@@ -74,6 +74,8 @@ type Msg
     | UseCurrentLocation
     | GeolocationError Geolocation.Error
     | GeolocationSuccess Coordinates
+    | UpdateStations Network
+    | UpdateStationsSuccess (List Station)
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -89,7 +91,7 @@ update msg model =
             { model | errorMessage = Just <| toString err } ! []
 
         GeocodingSuccess data ->
-            { model | geocodingData = mapSpecForResponse (Debug.log (toString data) data) } ! [ getNetworks ]
+            { model | geocodingData = mapSpecForResponse data } ! [ getNetworks ]
 
         LoadNetworksError err ->
             { model | errorMessage = Just <| toString err } ! []
@@ -100,7 +102,7 @@ update msg model =
                     Maybe.map (findNearestNetwork networks << .center) model.geocodingData |> Maybe.join
 
                 maybeLoadStations =
-                    Maybe.map getStations nearestNetwork |> Maybe.withDefault Cmd.none
+                    Maybe.map (getStations LoadStationsSuccess) nearestNetwork |> Maybe.withDefault Cmd.none
             in
                 { model | bikeNetworks = Just networks, nearestNetwork = nearestNetwork } ! [ maybeLoadStations ]
 
@@ -129,30 +131,19 @@ update msg model =
         GeolocationSuccess coords ->
             { model | geocodingData = Just <| mapSpecForCurrentLocation coords } ! [ getNetworks ]
 
+        UpdateStations network ->
+            model ! [ getStations UpdateStationsSuccess network ]
 
-sortByDistanceFrom : Coordinates -> List Station -> List Station
-sortByDistanceFrom coords stations =
-    List.sortBy (\s -> distance coords s.coordinates) stations
-
-
-distance : Coordinates -> Coordinates -> Float
-distance x y =
-    Geod.distance ( x.lat, x.lng ) ( y.lat, y.lng ) Geod.Meters
-
-
-findNearestNetwork : List Network -> Coordinates -> Maybe Network
-findNearestNetwork networks coordinates =
-    let
-        networkDistance coords net =
-            ( net, distance coords net.location.coordinates )
-
-        distances =
-            List.map (networkDistance coordinates) networks
-    in
-        List.sortBy snd distances |> List.head |> Maybe.map fst
+        UpdateStationsSuccess stations ->
+            let
+                bounds =
+                    Maybe.map .bounds model.geocodingData |> calculateMapBounds stations
+            in
+                { model | stations = sortByDistanceFrom (boundsCenter bounds) stations } ! []
 
 
 
+--[ getStations  network]
 -- VIEW
 
 
@@ -290,6 +281,24 @@ getCurrentLocation =
             |> Task.perform GeolocationError GeolocationSuccess
 
 
+getNetworks : Cmd Msg
+getNetworks =
+    let
+        task =
+            Http.get networksDecoder networksUrl
+    in
+        task |> Task.perform LoadNetworksError LoadNetworksSuccess
+
+
+getStations : (List Station -> Msg) -> Network -> Cmd Msg
+getStations successMsg network =
+    let
+        task =
+            Http.get stationsDecoder <| stationsUrl network
+    in
+        task |> Task.perform LoadStationsError successMsg
+
+
 
 -- HTTP
 
@@ -314,22 +323,18 @@ stationsUrl =
     buildUrl << .href
 
 
-getNetworks : Cmd Msg
-getNetworks =
-    let
-        task =
-            Http.get networksDecoder networksUrl
-    in
-        task |> Task.perform LoadNetworksError LoadNetworksSuccess
+
+-- subscriptions
 
 
-getStations : Network -> Cmd Msg
-getStations network =
-    let
-        task =
-            Http.get stationsDecoder <| stationsUrl network
-    in
-        task |> Task.perform LoadStationsError LoadStationsSuccess
+subscriptions : Model -> Sub Msg
+subscriptions model =
+    case model.nearestNetwork of
+        Just network ->
+            Time.every (5 * Time.second) (\_ -> UpdateStations network)
+
+        _ ->
+            Sub.none
 
 
 
@@ -351,6 +356,28 @@ port createMap : MapSpec -> Cmd msg
 
 
 -- Location Helpers
+
+
+sortByDistanceFrom : Coordinates -> List Station -> List Station
+sortByDistanceFrom coords stations =
+    List.sortBy (\s -> distance coords s.coordinates) stations
+
+
+distance : Coordinates -> Coordinates -> Float
+distance x y =
+    Geod.distance ( x.lat, x.lng ) ( y.lat, y.lng ) Geod.Meters
+
+
+findNearestNetwork : List Network -> Coordinates -> Maybe Network
+findNearestNetwork networks coordinates =
+    let
+        networkDistance coords net =
+            ( net, distance coords net.location.coordinates )
+
+        distances =
+            List.map (networkDistance coordinates) networks
+    in
+        List.sortBy snd distances |> List.head |> Maybe.map fst
 
 
 mapSpecForCurrentLocation : Coordinates -> MapSpec
