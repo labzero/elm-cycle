@@ -2,5 +2,13 @@
 @import "~purecss/build/grids.css";
 
 body {
-  margin: 0;
+  margin: 10px;
+}
+
+.error {
+  background-color: red;
+  color: black;
+}
+.noerror {
+  display: none;
 }
