@@ -105,7 +105,7 @@ update msg model =
             { model | errorMessage = Just <| toString err } ! []
 
         LoadStationsSuccess stations ->
-            { model | stations = Debug.log (toString stations) stations } ! []
+            { model | stations = stations } ! [ createMapMarkers stations ]
 
 
 findNearestNetwork : List Network -> Coordinates -> Maybe Network
@@ -279,6 +279,14 @@ createMapForLocation mapSpec =
 port createMap : MapSpec -> Cmd msg
 
 
+createMapMarkers : List Station -> Cmd msg
+createMapMarkers stations =
+    List.map markerSpecForStation stations |> createStationMarkers
+
+
+port createStationMarkers : List MarkerSpec -> Cmd msg
+
+
 
 -- Location Helpers
 
@@ -312,6 +320,11 @@ bounds v =
     Bounds v.northeast.longitude v.northeast.latitude v.southwest.latitude v.northeast.longitude
 
 
+markerSpecForStation : Station -> MarkerSpec
+markerSpecForStation s =
+    MarkerSpec (Coordinates s.latitude s.longitude) s.name
+
+
 
 -- Types
 
@@ -325,6 +338,12 @@ type alias MapSpec =
 type alias Coordinates =
     { lat : Float
     , lng : Float
+    }
+
+
+type alias MarkerSpec =
+    { location : Coordinates
+    , title : String
     }
 
 

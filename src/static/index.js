@@ -6,6 +6,29 @@ var Elm = require( '../elm/Main' );
 var app = Elm.Main.embed( document.getElementById( 'main' ) );
 
 var map;
+var stationMarkers = [];
+
+var addMarker = function(markerSpec) {
+  console.log("marker spec " + JSON.stringify(markerSpec));
+  return new google.maps.Marker({
+    position: markerSpec.location,
+    title: markerSpec.title,
+    map: map,
+    icon: {
+      path: google.maps.SymbolPath.CIRCLE,
+      scale: 3,
+      strokeColor: 'blue'
+    }
+  });
+};
+
+app.ports.createStationMarkers.subscribe(function(markerSpecs) {
+  console.log("station markers " + JSON.stringify(markerSpecs));
+
+  markerSpecs.forEach(function(markerSpec) {
+    stationMarkers.push(addMarker(markerSpec));
+  });
+});
 
 app.ports.createMap.subscribe(function(mapSpec) {
   var el = document.getElementById('map')
