@@ -8,7 +8,9 @@ var app = Elm.Main.embed( document.getElementById( 'main' ) );
 var map;
 
 app.ports.createMap.subscribe(function(mapSpec) {
-  map = new google.maps.Map(document.getElementById('map'), {
+  var el = document.getElementById('map')
+  el.style.display = 'block';
+  map = new google.maps.Map(el, {
           center: mapSpec.center,
           styles: [
           {elementType: 'geometry', stylers: [{color: '#ebe3cd'}]},
