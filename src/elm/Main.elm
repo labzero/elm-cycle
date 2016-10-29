@@ -48,6 +48,7 @@ type alias Model =
     , nearestNetwork : Maybe Network
     , stations : List Station
     , updatedStations : List String
+    , selectedStation : Maybe Station
     }
 
 
@@ -61,6 +62,7 @@ initialModel =
     , nearestNetwork = Nothing
     , stations = []
     , updatedStations = []
+    , selectedStation = Nothing
     }
 
 
@@ -159,7 +161,7 @@ update msg model =
             { model | updatedStations = [] } ! []
 
         StationClicked station ->
-            model ! [ zoomMap station.coordinates ]
+            { model | selectedStation = Just station } ! [ zoomMap station.coordinates ]
 
 
 clearUpdatedStations : Cmd Msg
@@ -204,7 +206,7 @@ view model =
         ++ maybeNode errorDiv model.errorMessage
         ++ [ mapDiv ]
         ++ maybeNode networkCard model.nearestNetwork
-        ++ [ stationsView model.stations model.updatedStations ]
+        ++ [ stationsView model.stations model.updatedStations model.selectedStation ]
 
 
 errorDiv : String -> Html Msg
@@ -239,8 +241,13 @@ companyHelper company =
             ""
 
 
-stationsView : List Station -> List String -> Html Msg
-stationsView stations updated =
+foo : Station -> Maybe Station -> Bool
+foo station selected =
+    Maybe.unwrap False ((==) station) selected
+
+
+stationsView : List Station -> List String -> Maybe Station -> Html Msg
+stationsView stations updated selectedStation =
     div [ class "pure-u-1-1" ]
         <| if List.isEmpty stations then
             []
@@ -252,19 +259,27 @@ stationsView stations updated =
                     , th [] [ text "Empty Slots" ]
                     , th [] [ text "Distance" ]
                     ]
-                , tbody [] <| List.map (stationRow updated) stations
+                , tbody [] <| List.map (stationRow updated selectedStation) stations
                 ]
             ]
 
 
-stationRow : List String -> Station -> Html Msg
-stationRow ids station =
+stationRow : List String -> Maybe Station -> Station -> Html Msg
+stationRow ids selected station =
     let
         classes =
-            if List.member station.id ids then
-                "station-row, station-row-updated"
-            else
-                "station-row"
+            List.concat
+                [ [ "station-row" ]
+                , if List.member station.id ids then
+                    [ "station-row-updated" ]
+                  else
+                    []
+                , if Maybe.unwrap False ((==) station) selected then
+                    [ Debug.log (toString selected) "station-row-focused" ]
+                  else
+                    []
+                ]
+                |> String.join " "
     in
         tr [ class classes, onClick <| StationClicked station ]
             [ td [] [ text <| station.name ]
