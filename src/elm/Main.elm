@@ -161,6 +161,7 @@ view model =
         ++ maybeNode errorDiv model.errorMessage
         ++ [ mapDiv ]
         ++ maybeNode networkCard model.nearestNetwork
+        ++ [ stationsView model.stations ]
 
 
 errorDiv : String -> Html Msg
@@ -193,6 +194,32 @@ companyHelper company =
 
         NoCompany ->
             ""
+
+
+stationsView : List Station -> Html Msg
+stationsView stations =
+    div [ class "pure-u-1-1" ]
+        <| if List.isEmpty stations then
+            []
+           else
+            [ table [ class "pure-u-1-4 pure-table pure-table-horizontal" ]
+                [ thead []
+                    [ th [] [ text "Name" ]
+                    , th [] [ text "Free Bikes" ]
+                    , th [] [ text "Empty Slots" ]
+                    ]
+                , tbody [] <| List.map stationRow stations
+                ]
+            ]
+
+
+stationRow : Station -> Html Msg
+stationRow station =
+    tr []
+        [ td [] [ text <| toString station.name ]
+        , td [] [ text <| toString station.freeBikes ]
+        , td [] [ text <| toString station.emptySlots ]
+        ]
 
 
 networksView : List Network -> Html Msg
