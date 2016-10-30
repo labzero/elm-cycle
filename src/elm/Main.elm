@@ -240,12 +240,6 @@ companyHelper company =
         NoCompany ->
             ""
 
-
-foo : Station -> Maybe Station -> Bool
-foo station selected =
-    Maybe.unwrap False ((==) station) selected
-
-
 stationsView : List Station -> List String -> Maybe Station -> Html Msg
 stationsView stations updated selectedStation =
     div [ class "pure-u-1-1" ]
