@@ -118,7 +118,7 @@ update msg model =
                 mapSpec =
                     MapSpec (boundsCenter bounds) bounds markers
             in
-                { model | stations = stations, mapSpec = Just mapSpec } ! [ createMapForLocation <| Just mapSpec ]
+                { model | stations = sortByDistanceFrom mapSpec.center stations, mapSpec = Just mapSpec } ! [ createMapForLocation <| Just mapSpec ]
 
         UseCurrentLocation ->
             model ! [ getCurrentLocation ]
@@ -130,14 +130,24 @@ update msg model =
             { model | geocodingData = Just <| mapSpecForCurrentLocation coords } ! [ getNetworks ]
 
 
+sortByDistanceFrom : Coordinates -> List Station -> List Station
+sortByDistanceFrom coords stations =
+    List.sortBy (\s -> distance coords s.coordinates) stations
+
+
+distance : Coordinates -> Coordinates -> Float
+distance x y =
+    Geod.distance ( x.lat, x.lng ) ( y.lat, y.lng ) Geod.Meters
+
+
 findNearestNetwork : List Network -> Coordinates -> Maybe Network
 findNearestNetwork networks coordinates =
     let
-        distance coords net =
-            ( net, Geod.distance ( coords.lat, coords.lng ) ( net.location.coordinates.lat, net.location.coordinates.lng ) Geod.Meters )
+        networkDistance coords net =
+            ( net, distance coords net.location.coordinates )
 
         distances =
-            List.map (distance coordinates) networks
+            List.map (networkDistance coordinates) networks
     in
         List.sortBy snd distances |> List.head |> Maybe.map fst
 
@@ -216,7 +226,7 @@ stationsView stations =
 stationRow : Station -> Html Msg
 stationRow station =
     tr []
-        [ td [] [ text <| toString station.name ]
+        [ td [] [ text <| station.name ]
         , td [] [ text <| toString station.freeBikes ]
         , td [] [ text <| toString station.emptySlots ]
         ]
