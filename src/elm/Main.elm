@@ -10,6 +10,7 @@ import Time exposing (Time)
 import Date exposing (Date)
 import Basics as B
 import Geocoding as G
+import Geolocation
 import Task exposing (Task)
 import Maybe.Extra as Maybe
 import Json.Decode as Decode exposing (Decoder, list, int, string, float, (:=))
@@ -70,6 +71,9 @@ type Msg
     | LoadNetworksSuccess (List Network)
     | LoadStationsError Http.Error
     | LoadStationsSuccess (List Station)
+    | UseCurrentLocation
+    | GeolocationError Geolocation.Error
+    | GeolocationSuccess Coordinates
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -116,6 +120,15 @@ update msg model =
             in
                 { model | stations = stations, mapSpec = Just mapSpec } ! [ createMapForLocation <| Just mapSpec ]
 
+        UseCurrentLocation ->
+            model ! [ getCurrentLocation ]
+
+        GeolocationError err ->
+            { model | errorMessage = Just <| toString err } ! []
+
+        GeolocationSuccess coords ->
+            { model | geocodingData = Just <| mapSpecForCurrentLocation coords } ! [ getNetworks ]
+
 
 findNearestNetwork : List Network -> Coordinates -> Maybe Network
 findNearestNetwork networks coordinates =
@@ -141,6 +154,7 @@ view model =
                     [ legend [] [ text "Find a Bike Share" ]
                     , input [ class "pure-input-1-3", type' "text", placeholder "Address, Location Name or Postal Code", value model.locationField, onInput UpdateLocationField ] []
                     , button [ class "pure-button pure-button-primary", type' "submit" ] [ text "Search" ]
+                    , span [ class "pure-button", onClick UseCurrentLocation ] [ text "Use Current Location" ]
                     ]
                 ]
            ]
@@ -229,6 +243,16 @@ geocodeLocation str =
         |> Task.perform GeocodingError GeocodingSuccess
 
 
+getCurrentLocation : Cmd Msg
+getCurrentLocation =
+    let
+        toCoordinates loc =
+            Coordinates loc.latitude loc.longitude
+    in
+        Task.map toCoordinates Geolocation.now
+            |> Task.perform GeolocationError GeolocationSuccess
+
+
 
 -- HTTP
 
@@ -290,6 +314,11 @@ port createMap : MapSpec -> Cmd msg
 
 
 -- Location Helpers
+
+
+mapSpecForCurrentLocation : Coordinates -> MapSpec
+mapSpecForCurrentLocation coords =
+    MapSpec coords (boundsForCoordinates [ coords ]) []
 
 
 mapSpecForResponse : G.Response -> Maybe MapSpec
