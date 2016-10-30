@@ -21,6 +21,11 @@ var addMarker = function(markerSpec) {
   });
 };
 
+app.ports.zoomMap.subscribe(function(coords) {
+  map.setCenter(coords);
+  map.setZoom(18);
+});
+
 app.ports.createMap.subscribe(function(mapSpec) {
   var el = document.getElementById('map')
   el.style.display = 'block';
